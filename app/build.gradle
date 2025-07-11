@@ -64,4 +64,6 @@ dependencies {
     implementation 'com.github.gzu-liyujiang:Android_CN_OAID:4.2.9' // Android_CN_OAID
     implementation 'com.google.android.gms:play-services-ads-identifier:18.1.0'  // Google Play
     implementation 'it.sauronsoftware.cron4j:cron4j:2.2.5' // Cron4j
+
+    implementation 'org.nanohttpd:nanohttpd:2.3.1' // NanoHTTPD for embedded HTTP server
 }

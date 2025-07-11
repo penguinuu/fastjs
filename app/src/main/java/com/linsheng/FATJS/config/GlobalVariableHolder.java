@@ -13,10 +13,25 @@ import com.google.gson.JsonParser;
 import com.linsheng.FATJS.activitys.aione_editor.MainActivity;
 import com.linsheng.FATJS.utils.FileUtils;
 import com.linsheng.FATJS.utils.StringUtils;
+import com.linsheng.FATJS.node.AccUtils; // For loadScriptFromAssets
+import com.linsheng.FATJS.node.TaskBase;
+import com.linsheng.FATJS.node.UiObject;
+import com.linsheng.FATJS.node.App; // Assuming App class is com.linsheng.FATJS.node.App
+import com.linsheng.FATJS.okhttp3.HttpUtils;
+import com.linsheng.FATJS.okhttp3.WebSocketUtils;
+import com.linsheng.FATJS.ntptime.NtpService;
+import android.content.Intent; // For Intent class
+import android.util.Log;
 
+import com.caoccao.javet.exceptions.JavetException;
+import com.caoccao.javet.interop.V8Host;
+import com.caoccao.javet.interop.converters.JavetProxyConverter;
+
+import java.io.IOException;
 import java.util.HashMap;
 
 public class GlobalVariableHolder {
+    private static final String TAG = "GlobalVariableHolder";
     public static boolean CRON_TASK = false; // 定时任务是否开启
     public static String CRON_TASK_FILE = "定时任务配置.txt"; // 定时任务配置
     public static String CRON_TASK_FILE_TEST = "test_demo.js"; // 定时任务测试
@@ -103,4 +118,91 @@ public class GlobalVariableHolder {
         }
     }
     public static HashMap<String, Object> hashMapBuffer;
+
+    private static volatile boolean isV8RuntimeInitialized = false;
+    private static final Object v8InitLock = new Object();
+
+    public static void ensureV8RuntimeInitialized() {
+        if (isV8RuntimeInitialized && v8Runtime != null) {
+            return;
+        }
+        synchronized (v8InitLock) {
+            if (isV8RuntimeInitialized && v8Runtime != null) {
+                return;
+            }
+            try {
+                Log.i(TAG, "Initializing V8 runtime...");
+                if (context == null) {
+                    Log.e(TAG, "Context is null. Cannot initialize V8 runtime. Ensure Application context is set first.");
+                    // Consider throwing an exception or handling this state more gracefully
+                    // For now, we'll return and subsequent calls will try again if context gets set.
+                    return;
+                }
+
+                v8Runtime = V8Host.getV8Instance().createV8Runtime();
+                v8Runtime.setConverter(new JavetProxyConverter()); // Configure to call Java methods
+
+                // Register global objects, similar to TaskBase.initJavet()
+                v8Runtime.getGlobalObject().set("engines", TaskBase.class);
+                v8Runtime.getGlobalObject().set("http", HttpUtils.class);
+                v8Runtime.getGlobalObject().set("websocket", WebSocketUtils.class);
+                v8Runtime.getGlobalObject().set("UiObject", UiObject.class);
+                // Assuming App class is com.linsheng.FATJS.node.App, if not, this needs correction
+                v8Runtime.getGlobalObject().set("app", com.linsheng.FATJS.node.App.class);
+                v8Runtime.getGlobalObject().set("Intent", Intent.class);
+                v8Runtime.getGlobalObject().set("ntpService", NtpService.class);
+                // Add any other global objects that are usually set up
+
+                // Load and execute base.js
+                String baseJsContent = AccUtils.loadScriptFromAssets("base.js");
+                if (baseJsContent != null && !baseJsContent.isEmpty()) {
+                    v8Runtime.getExecutor(baseJsContent).executeVoid();
+                    Log.i(TAG, "base.js loaded and executed in V8 runtime.");
+                } else {
+                    Log.e(TAG, "base.js is empty or could not be loaded.");
+                    // Handle this error - perhaps throw an exception
+                }
+
+                isV8RuntimeInitialized = true;
+                Log.i(TAG, "V8 runtime initialized successfully.");
+
+            } catch (JavetException e) {
+                Log.e(TAG, "JavetException during V8 runtime initialization: " + e.getMessage(), e);
+                isV8RuntimeInitialized = false; // Reset flag on failure
+                if (v8Runtime != null) {
+                    try {
+                        v8Runtime.close();
+                    } catch (JavetException je) {
+                        Log.e(TAG, "JavetException while closing runtime after init failure: " + je.getMessage(), je);
+                    }
+                    v8Runtime = null;
+                }
+                // Optionally, rethrow or handle more specifically
+            } catch (IOException e) {
+                Log.e(TAG, "IOException during V8 runtime initialization (loading base.js): " + e.getMessage(), e);
+                isV8RuntimeInitialized = false; // Reset flag on failure
+                 if (v8Runtime != null) {
+                    try {
+                        v8Runtime.close();
+                    } catch (JavetException je) {
+                         Log.e(TAG, "JavetException while closing runtime after init failure: " + je.getMessage(), je);
+                    }
+                    v8Runtime = null;
+                }
+                // Optionally, rethrow or handle more specifically
+            } catch (Exception e) {
+                Log.e(TAG, "Generic Exception during V8 runtime initialization: " + e.getMessage(), e);
+                isV8RuntimeInitialized = false; // Reset flag on failure
+                if (v8Runtime != null) {
+                    try {
+                        v8Runtime.close();
+                    } catch (JavetException je) {
+                        Log.e(TAG, "JavetException while closing runtime after init failure: " + je.getMessage(), je);
+                    }
+                    v8Runtime = null;
+                }
+                // Optionally, rethrow or handle more specifically
+            }
+        }
+    }
 }
